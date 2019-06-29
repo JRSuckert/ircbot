@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	Name   string
-	Adress string
-	Nick   string
-	Pass   string
+	Name     string
+	Adress   string
+	Nick     string
+	Pass     string
+	Channels []string
 }
 
 func (config *Config) Parse(configFile string) {
