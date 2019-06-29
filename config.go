@@ -11,6 +11,7 @@ type Config struct {
 	Name   string
 	Adress string
 	Nick   string
+	Pass   string
 }
 
 func (config *Config) Parse(configFile string) {
