@@ -1,0 +1,4 @@
+---
+name: "Testserver"
+adress: "localhost:6667"
+nick: "test"
