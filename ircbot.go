@@ -6,26 +6,32 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 )
 
-type IRCConnection struct {
+// IRCClient contains connection related variables
+type IRCClient struct {
 	connection  net.Conn
+	config      Config
 	established bool
 }
 
-func (irc *IRCConnection) Connect(config Config) {
+// Connect establishes connection to IRC server
+func (irc *IRCClient) Connect() {
 	var err error
-	irc.connection, err = net.Dial("tcp", config.Adress)
+	irc.connection, err = net.Dial("tcp", irc.config.Adress)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintf(irc.connection, "NICK %s\r\n", config.Nick)
-	fmt.Fprintf(irc.connection, "USER %s 0 * %s\r\n", config.Nick, config.Nick)
-	fmt.Fprintf(irc.connection, "PRIVMSG NickServ IDENTIFY %s\r\n", config.Pass)
+	fmt.Fprintf(irc.connection, "NICK %s\r\n", irc.config.Nick)
+	fmt.Fprintf(irc.connection, "USER %s 0 * %s\r\n", irc.config.Nick, irc.config.Nick)
+	fmt.Fprintf(irc.connection, "PRIVMSG NickServ IDENTIFY %s\r\n", irc.config.Pass)
 
 }
 
-func (irc *IRCConnection) Receive(EOC chan bool, messages chan string) {
+// Receive reads incoming stream and passes messages
+// onto the parser
+func (irc *IRCClient) Receive(EOC chan bool, messages chan string) {
 	defer close(EOC)
 	defer close(messages)
 	scanner := bufio.NewScanner(bufio.NewReader(irc.connection))
@@ -47,38 +53,35 @@ func (irc *IRCConnection) Receive(EOC chan bool, messages chan string) {
 	EOC <- true
 }
 
-func (irc *IRCConnection) Parse(messages chan string) {
+// Parse incoming messages and direct them to the
+// appropriate handler
+func (irc *IRCClient) Parse(messages chan string) {
 	for c := range messages {
 		words := strings.Fields(c)
 		var hostname string
 		if c[0] == ':' {
-			hostname = words[0]
+			hostname = words[0][1:]
 			words = words[1:]
 		}
-		if strings.EqualFold(words[0], "004") {
-			irc.established = true
-		}
-		if strings.EqualFold(words[0], "PING") {
-			fmt.Println(c)
-			responseText := strings.Replace(c, "PING", "PONG", 1)
-			irc.connection.Write([]byte(responseText))
-		} else {
-			fmt.Printf("[%s] %s \n", hostname, strings.Join(words, " "))
-		}
 
+		if val, ok := handleMap[words[0]]; ok {
+			val(irc, words)
+		} else {
+			fmt.Printf("[%s] %s\n", hostname, strings.Join(words, " "))
+		}
 	}
 }
 
 func main() {
-	var config Config
-	config.Parse("serverconfig.yml")
-
-	var server IRCConnection
-	server.Connect(config)
+	var server IRCClient
+	server.config.Parse("serverconfig.yml")
+	server.Connect()
 
 	eoc := make(chan bool)
 	messages := make(chan string, 512)
 
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go server.Receive(eoc, messages)
 	go server.Parse(messages)
 
@@ -88,14 +91,10 @@ func main() {
 		}
 	}
 
-	for _, channel := range config.Channels {
+	for _, channel := range server.config.Channels {
 		fmt.Printf("Trying to join %s\n", channel)
 		fmt.Fprintf(server.connection, "JOIN %s\r\n", channel)
 	}
 
-	for e := range eoc {
-		if e {
-			fmt.Println("Received exit")
-		}
-	}
+	wg.Wait()
 }
