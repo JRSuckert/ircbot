@@ -31,8 +31,7 @@ func (irc *IRCClient) Connect() {
 
 // Receive reads incoming stream and passes messages
 // onto the parser
-func (irc *IRCClient) Receive(EOC chan bool, messages chan string) {
-	defer close(EOC)
+func (irc *IRCClient) Receive(messages chan string) {
 	defer close(messages)
 	scanner := bufio.NewScanner(bufio.NewReader(irc.connection))
 	split := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -50,7 +49,6 @@ func (irc *IRCClient) Receive(EOC chan bool, messages chan string) {
 		text := scanner.Text()
 		messages <- text
 	}
-	EOC <- true
 }
 
 // Parse incoming messages and direct them to the
@@ -77,12 +75,11 @@ func main() {
 	server.config.Parse("serverconfig.yml")
 	server.Connect()
 
-	eoc := make(chan bool)
 	messages := make(chan string, 512)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go server.Receive(eoc, messages)
+	go server.Receive(messages)
 	go server.Parse(messages)
 
 	for {
